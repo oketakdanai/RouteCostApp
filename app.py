@@ -5,8 +5,7 @@ import pandas as pd
 import requests
 import folium
 from streamlit_folium import st_folium
-import re        # <- เพิ่มตัวช่วยจัดการข้อความ
-import textwrap  # <- เพิ่มตัวช่วยจัดเรียงบรรทัด
+import textwrap
 
 st.set_page_config(page_title="Route Cost", layout="wide")
 
@@ -43,7 +42,7 @@ def reset_calculated_data():
     st.session_state.end_coords = None
 
 # ==========================================
-# 📦 2. เชื่อมต่อ Google Sheets 
+# 📦 2. เชื่อมต่อ Google Sheets (เวอร์ชันซ่อมกุญแจขั้นสูง)
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -53,57 +52,40 @@ def init_connection():
         creds_dict = json.loads(creds_json, strict=False)
         
         # 2. ระบบซ่อมแซมลายเซ็นกุญแจ (JWT Signature Fixer)
+        # ป้องกันปัญหา Invalid JWT Signature จากการก๊อปปี้กุญแจไม่เป๊ะ
         private_key = creds_dict.get("private_key", "")
-        
-        # ล้างรอยด่างพร้อย: ลบการขึ้นบรรทัดใหม่ทิ้งให้หมดก่อน
         cleaned_key = private_key.replace("\\n", "\n")
         
-        # ค้นหาจุดเริ่มและจุดจบของกุญแจ แล้วตัดส่วนเกินออก
         if "-----BEGIN PRIVATE KEY-----" in cleaned_key:
             start_marker = "-----BEGIN PRIVATE KEY-----"
             end_marker = "-----END PRIVATE KEY-----"
             
-            # ดึงเฉพาะเนื้อกุญแจข้างในออกมา
-            core_key = cleaned_key.split(start_marker)[1].split(end_marker)[0]
-            # ลบช่องว่าง/การขึ้นบรรทัดใหม่ทั้งหมดในเนื้อกุญแจ
-            core_key = "".join(core_key.split())
-            
-            # ประกอบร่างใหม่ตามมาตรฐาน PEM (เป๊ะแน่นอน 100%)
-            import textwrap
-            formatted_core = "\n".join(textwrap.wrap(core_key, 64))
-            final_key = f"{start_marker}\n{formatted_core}\n{end_marker}\n"
-            
-            creds_dict["private_key"] = final_key
+            # แยกเฉพาะเนื้อกุญแจออกมาล้างช่องว่าง
+            parts = cleaned_key.split(start_marker)
+            if len(parts) > 1:
+                sub_parts = parts[1].split(end_marker)
+                if len(sub_parts) > 0:
+                    core_key = "".join(sub_parts[0].split())
+                    # จัดเรียงใหม่ให้เป๊ะ บรรทัดละ 64 ตัวอักษรตามมาตรฐาน PEM
+                    formatted_core = "\n".join(textwrap.wrap(core_key, 64))
+                    final_key = f"{start_marker}\n{formatted_core}\n{end_marker}\n"
+                    creds_dict["private_key"] = final_key
         
         # 3. ล็อกอินเข้า Google Sheets
         client = gspread.service_account_from_dict(creds_dict)
         return client.open("Route Cost")
         
     except Exception as e:
-        st.error(f"⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ: {e}")
+        st.error(f"⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ Google Sheets: {e}")
         return None
-    
-    # 🔥🔥🔥 ระบบ "เครื่องซักผ้ากุญแจ" (Key Washer) 🔥🔥🔥
-    # ดึงกุญแจเดิมมาล้างช่องว่างและจัดเรียงบรรทัดใหม่ให้ Google อ่านออก 100%
-    raw_key = creds_dict.get("private_key", "")
-    raw_key = raw_key.replace("-----BEGIN PRIVATE KEY-----", "")
-    raw_key = raw_key.replace("-----END PRIVATE KEY-----", "")
-    raw_key = re.sub(r'\s+', '', raw_key) # ลบช่องว่างและบรรทัดที่ผิดเพี้ยนทิ้งให้เกลี้ยง
-    raw_key = raw_key.replace("\\n", "")
-    
-    # ประกอบร่างกุญแจใหม่ให้เป๊ะตามมาตรฐาน
-    clean_key = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(textwrap.wrap(raw_key, 64)) + "\n-----END PRIVATE KEY-----\n"
-    creds_dict["private_key"] = clean_key
-    # 🔥🔥🔥 จบการทำงานเครื่องซักผ้า 🔥🔥🔥
-    
-    client = gspread.service_account_from_dict(creds_dict)
-    return client.open("Route Cost") 
 
 conn = init_connection()
 
 @st.cache_data(ttl=600)
 def get_car_data():
-    return pd.DataFrame(conn.worksheet("DB_รถยนต์").get_all_records())
+    if conn:
+        return pd.DataFrame(conn.worksheet("DB_รถยนต์").get_all_records())
+    return pd.DataFrame()
 
 df_cars = get_car_data()
 
@@ -145,13 +127,13 @@ FUEL_MAPPING = {
 }
 
 # ==========================================
-# 🗺️ 4. ระบบแผนที่และการคำนวณเส้นทาง
+# 🗺️ 4. ระบบพิกัดและการคำนวณเส้นทาง
 # ==========================================
 def get_coords_from_text(place_name):
     if not place_name.strip() or place_name.startswith("📍"):
         return None, None
     url = f"https://nominatim.openstreetmap.org/search?q={place_name}&format=json&limit=1"
-    headers = {'User-Agent': 'RouteCostApp/1.6'}
+    headers = {'User-Agent': 'RouteCostApp/2.0'}
     try:
         res = requests.get(url, headers=headers).json()
         if len(res) > 0:
@@ -162,7 +144,7 @@ def get_coords_from_text(place_name):
 
 def get_place_name(lat, lon):
     url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-    headers = {'User-Agent': 'RouteCostApp/1.6'}
+    headers = {'User-Agent': 'RouteCostApp/2.0'}
     try:
         res = requests.get(url, headers=headers).json()
         if "display_name" in res:
@@ -214,117 +196,94 @@ with col1:
             st.session_state.map_mode_active = True
             st.rerun() 
     else:
-        st.info("👇 เลือกหมุดที่ต้องการ แล้วไปคลิกบนแผนที่ทางขวาได้เลยครับ")
+        st.info("👇 เลือกหมุดที่ต้องการ แล้วคลิกบนแผนที่ได้เลยครับ")
         col_s, col_e = st.columns(2)
+        st.session_state.active_pin_to_set = st.radio("เลือกจุดที่จะปัก:", ["🟢 จุดเริ่มต้น (Start)", "🔴 ปลายทาง (End)"], horizontal=True)
         
-        st.session_state.active_pin_to_set = st.radio("คุณกำลังจะปักหมุดที่ไหน?", ["🟢 จุดเริ่มต้น (Start)", "🔴 ปลายทาง (End)"], horizontal=True, key="active_pin_radio")
+        col_s.write(f"**เขียว:** {'✅' if st.session_state.pin_start else '❌'}")
+        col_e.write(f"**แดง:** {'✅' if st.session_state.pin_end else '❌'}")
         
-        col_s.write(f"**สถานะ (เขียว):** {'✅ ปักแล้ว' if st.session_state.pin_start else 'รอคลิก...'}")
-        col_e.write(f"**สถานะ (แดง):** {'✅ ปักแล้ว' if st.session_state.pin_end else 'รอคลิก...'}")
-        
-        col_c, col_d = st.columns(2)
-        if col_c.button("ล้างหมุดทั้งหมด", use_container_width=True):
-            st.session_state.pin_start = None
-            st.session_state.pin_end = None
-            st.session_state.origin_text = ""
-            st.session_state.dest_text = ""
+        c1, c2 = st.columns(2)
+        if c1.button("ล้างหมุด", use_container_width=True):
+            st.session_state.pin_start = st.session_state.pin_end = None
+            st.session_state.origin_text = st.session_state.dest_text = ""
             reset_calculated_data()
             st.rerun()
-            
-        if col_d.button("❌ ปิดโหมดปักหมุด", type="primary", use_container_width=True):
+        if c2.button("❌ ปิดโหมดปัก", type="primary", use_container_width=True):
             st.session_state.map_mode_active = False
             st.rerun()
 
     st.divider()
-    selected_car = st.selectbox("เลือกรถของคุณ", df_cars.iloc[:, 0].tolist(), on_change=reset_calculated_data) 
+    if not df_cars.empty:
+        selected_car = st.selectbox("เลือกรถของคุณ", df_cars.iloc[:, 0].tolist(), on_change=reset_calculated_data) 
+    else:
+        st.warning("⚠️ ไม่พบข้อมูลรถในระบบ")
+        selected_car = None
     
     if df_prices is not None:
         station_options = ["Average"] + [col for col in df_prices.columns if col != "Average"]
-        selected_station = st.selectbox("เลือกปั๊มน้ำมัน (หรือใช้ราคาเฉลี่ย)", station_options, on_change=reset_calculated_data)
+        selected_station = st.selectbox("เลือกปั๊มน้ำมัน", station_options, on_change=reset_calculated_data)
     else:
-        st.error("ไม่สามารถเชื่อมต่อ API ราคาน้ำมันได้")
         selected_station = None
 
-    # --- การคำนวณ ---
-    if st.button("คำนวณการเดินทาง", type="primary"):
-        start_c = None
-        end_c = None
-        
-        if st.session_state.pin_start:
-            start_c = st.session_state.pin_start
-        else:
-            start_c = get_coords_from_text(st.session_state.origin_text)
-            
-        if st.session_state.pin_end:
-            end_c = st.session_state.pin_end
-        else:
-            end_c = get_coords_from_text(st.session_state.dest_text)
+    if st.button("คำนวณการเดินทาง", type="primary", use_container_width=True):
+        start_c = st.session_state.pin_start or get_coords_from_text(st.session_state.origin_text)
+        end_c = st.session_state.pin_end or get_coords_from_text(st.session_state.dest_text)
             
         if not start_c or not end_c:
-            st.error("❌ กรุณาระบุจุดเริ่มต้นและปลายทางให้ครบถ้วนก่อนคำนวณครับ")
+            st.error("❌ ระบุตำแหน่งให้ครบก่อนนะครับ")
         else:
-            with st.spinner('กำลังคำนวณและวาดเส้นทาง...'):
+            with st.spinner('กำลังคำนวณ...'):
                 dist, coords, start, end = get_route_data_free(start_c, end_c)
-                if dist is None:
-                    st.error("❌ ไม่พบเส้นทางครับ ลองปักหมุดให้ใกล้ถนนใหญ่ดูนะครับ")
+                if dist:
+                    st.session_state.calculated, st.session_state.distance = True, dist
+                    st.session_state.route_coords, st.session_state.start_coords, st.session_state.end_coords = coords, start, end
                 else:
-                    st.session_state.calculated = True
-                    st.session_state.distance = dist
-                    st.session_state.route_coords = coords
-                    st.session_state.start_coords = start
-                    st.session_state.end_coords = end
+                    st.error("❌ ไม่พบเส้นทางครับ")
             
-    if st.session_state.calculated and st.session_state.distance is not None:
+    if st.session_state.calculated and st.session_state.distance:
         car_info = df_cars[df_cars.iloc[:, 0] == selected_car].iloc[0]
-        sheet_fuel_name = str(car_info.iloc[1]).strip()
-        km_per_liter = float(car_info.iloc[2])
-        api_fuel_key = FUEL_MAPPING.get(sheet_fuel_name, None)
+        sheet_fuel, km_l = str(car_info.iloc[1]).strip(), float(car_info.iloc[2])
+        api_fuel = FUEL_MAPPING.get(sheet_fuel)
         
-        if api_fuel_key and api_fuel_key in df_prices.index:
-            current_price = df_prices.loc[api_fuel_key, selected_station]
-            if current_price == 0:
-                st.warning(f"⚠️ ปั๊ม {selected_station} ไม่มีข้อมูลน้ำมัน '{sheet_fuel_name}'")
-            else:
-                total_cost = (st.session_state.distance / km_per_liter) * current_price
+        if api_fuel and api_fuel in df_prices.index:
+            price = df_prices.loc[api_fuel, selected_station]
+            if price > 0:
+                cost = (st.session_state.distance / km_l) * price
                 st.divider()
                 st.subheader("สรุปผล")
                 m1, m2 = st.columns(2)
-                m1.metric("ระยะทางจริง (กม.)", f"{st.session_state.distance:.2f}")
-                m2.metric("ค่าน้ำมันรวม (บาท)", f"{total_cost:.2f}")
-                station_display = "ราคาเฉลี่ย" if selected_station == "Average" else f"ปั๊ม {selected_station.upper()}"
-                st.success(f"ℹ️ รถกินน้ำมัน {km_per_liter} km/L | {sheet_fuel_name} {station_display} ลิตรละ {current_price} บาท")
+                m1.metric("ระยะทาง (กม.)", f"{st.session_state.distance:.2f}")
+                m2.metric("ค่าน้ำมัน (บาท)", f"{cost:.2f}")
+                st.success(f"ℹ️ {sheet_fuel} ลิตรละ {price} บาท")
 
 with col2:
     st.subheader("แผนที่เส้นทาง")
-    m = folium.Map(location=[13.7563, 100.5018], zoom_start=5)
+    m = folium.Map(location=[13.7563, 100.5018], zoom_start=6)
     
     if st.session_state.pin_start:
-        folium.Marker(st.session_state.pin_start, tooltip="จุดเริ่มต้น", icon=folium.Icon(color="green")).add_to(m)
+        folium.Marker(st.session_state.pin_start, icon=folium.Icon(color="green")).add_to(m)
     if st.session_state.pin_end:
-        folium.Marker(st.session_state.pin_end, tooltip="ปลายทาง", icon=folium.Icon(color="red")).add_to(m)
+        folium.Marker(st.session_state.pin_end, icon=folium.Icon(color="red")).add_to(m)
 
     if st.session_state.calculated and st.session_state.route_coords:
-        folium.PolyLine(st.session_state.route_coords, color="blue", weight=5, opacity=0.8).add_to(m)
-        folium.Marker(st.session_state.start_coords, tooltip="จุดเริ่มต้น", icon=folium.Icon(color="green", icon="play")).add_to(m)
-        folium.Marker(st.session_state.end_coords, tooltip="ปลายทาง", icon=folium.Icon(color="red", icon="flag")).add_to(m)
+        folium.PolyLine(st.session_state.route_coords, color="blue", weight=5).add_to(m)
+        folium.Marker(st.session_state.start_coords, icon=folium.Icon(color="green", icon="play")).add_to(m)
+        folium.Marker(st.session_state.end_coords, icon=folium.Icon(color="red", icon="flag")).add_to(m)
         
-    map_data = st_folium(m, width="100%", height=500, returned_objects=["last_clicked"], key="interactive_map")
+    map_data = st_folium(m, width="100%", height=550, returned_objects=["last_clicked"], key="interactive_map")
     
     if st.session_state.map_mode_active and map_data and map_data.get("last_clicked"):
-        lat = map_data["last_clicked"]["lat"]
-        lon = map_data["last_clicked"]["lng"]
-        clicked_coord = [lat, lon]
+        lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
+        clicked = [lat, lon]
         
-        if st.session_state.active_pin_to_set == "🟢 จุดเริ่มต้น (Start)" and st.session_state.pin_start != clicked_coord:
-            st.session_state.pin_start = clicked_coord
-            place_name = get_place_name(lat, lon)
-            st.session_state.origin_text = f"📍 {place_name}"
+        if st.session_state.active_pin_to_set == "🟢 จุดเริ่มต้น (Start)" and st.session_state.pin_start != clicked:
+            st.session_state.pin_start = clicked
+            st.session_state.origin_text = f"📍 {get_place_name(lat, lon)}"
             reset_calculated_data()
             st.rerun() 
-            
-        elif st.session_state.active_pin_to_set == "🔴 ปลายทาง (End)" and st.session_state.pin_end != clicked_coord:
-            st.session_state.pin_end = clicked_coord
-            place_name = get_place_name(lat, lon)
-            st.session_state.dest_text = f"📍 {place_name}"
+        elif st.session_state.active_pin_to_set == "🔴 ปลายทาง (End)" and st.session_state.pin_end != clicked:
+            st.session_state.pin_end = clicked
+            st.session_state.dest_text = f"📍 {get_place_name(lat, lon)}"
             reset_calculated_data()
             st.rerun()
