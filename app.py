@@ -1,6 +1,4 @@
 import streamlit as st
-import gspread
-import json  
 import pandas as pd
 import requests
 import folium
@@ -22,41 +20,25 @@ def reset_calculated_data():
     st.session_state.distance = st.session_state.route_coords = None
 
 # ==========================================
-# 📦 2. เชื่อมต่อ Google Sheets (เวอร์ชันทนทานพิเศษ)
+# 📦 2. ดึงข้อมูลรถจากไฟล์ CSV (ง่ายกว่าเดิมเยอะ!)
 # ==========================================
-@st.cache_resource
-def init_connection():
-    try:
-        # 1. ดึงกุญแจดิบมาจาก Secrets
-        creds_raw = st.secrets["google_credentials"]
-        creds_dict = json.loads(creds_raw, strict=False)
-        
-        # 2. แก้ปัญหาตัวอักษร \n เพี้ยน (สาเหตุของ Invalid JWT Signature)
-        # เราจะบังคับให้มันเป็น Newline จริงๆ ไม่ว่ามันจะมาในรูปแบบไหน
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        
-        # 3. ล็อกอิน
-        client = gspread.service_account_from_dict(creds_dict)
-        return client.open("Route Cost")
-    except Exception as e:
-        st.error(f"⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ Google Sheets: {e}")
-        return None
-
-conn = init_connection()
-
 @st.cache_data(ttl=600)
 def get_car_data():
-    if conn:
-        try:
-            return pd.DataFrame(conn.worksheet("DB_รถยนต์").get_all_records())
-        except: return pd.DataFrame()
-    return pd.DataFrame()
+    try:
+        # อ่านไฟล์ชื่อ cars.csv ที่อยู่ในห้องเดียวกับ app.py
+        return pd.read_csv("cars.csv")
+    except:
+        # ถ้าหาไฟล์ไม่เจอ ให้ใช้ข้อมูลตัวอย่างไปก่อน
+        return pd.DataFrame({
+            "รุ่นรถ": ["ตัวอย่าง: Honda CR-V"],
+            "ประเภทน้ำมัน": ["แก๊สโซฮอล์ 95"],
+            "อัตราสิ้นเปลือง (กม./ลิตร)": [12.0]
+        })
 
 df_cars = get_car_data()
 
 # ==========================================
-# ⛽ 3. ราคาน้ำมัน
+# ⛽ 3. ราคาน้ำมัน (ใช้ API เดิม)
 # ==========================================
 @st.cache_data(ttl=3600) 
 def get_live_oil_prices():
@@ -77,7 +59,7 @@ FUEL_MAP = {"เบนซิน": "gasoline_95", "แก๊สโซฮอล์
 # ==========================================
 def get_place_name(lat, lon):
     try:
-        res = requests.get(f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th", headers={'User-Agent': 'RouteApp/3.0'}).json()
+        res = requests.get(f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th", headers={'User-Agent': 'RouteApp/4.0'}).json()
         return ", ".join(res.get("display_name", "").split(", ")[:3])
     except: return f"{lat:.4f}, {lon:.4f}"
 
@@ -92,7 +74,6 @@ with col1:
     origin = st.text_input("จุดเริ่มต้น", value=st.session_state.origin_text)
     destination = st.text_input("จุดหมายปลายทาง", value=st.session_state.dest_text)
     
-    # อัปเดตตัวแปรเมื่อมีการพิมพ์เอง
     if origin != st.session_state.origin_text: st.session_state.origin_text = origin; reset_calculated_data()
     if destination != st.session_state.dest_text: st.session_state.dest_text = destination; reset_calculated_data()
 
@@ -111,7 +92,6 @@ with col1:
         station = st.selectbox("เลือกปั๊ม", ["Average"] + [c for c in df_prices.columns if c != "Average"]) if df_prices is not None else None
         
         if st.button("คำนวณการเดินทาง", type="primary", use_container_width=True):
-            # ค้นหาพิกัด
             s_c = st.session_state.pin_start or (None, None)
             if not s_c[0]:
                 res = requests.get(f"https://nominatim.openstreetmap.org/search?q={st.session_state.origin_text}&format=json&limit=1").json()
