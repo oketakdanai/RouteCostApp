@@ -4,10 +4,36 @@ import requests
 import folium
 from streamlit_folium import st_folium
 
+# 1. ตั้งค่า Page Config
 st.set_page_config(page_title="Route Cost Calculator", layout="wide")
 
 # ==========================================
-# 🧠 1. ระบบจัดการความจำ (Session State)
+# 🎨 2. การตั้งค่าฟอนต์ Prompt (CSS Injection)
+# ==========================================
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500&display=swap');
+
+    /* ตั้งค่าฟอนต์หลักทั้งแอป */
+    html, body, [class*="css"]  {
+        font-family: 'Prompt', sans-serif;
+    }
+
+    /* ปรับแต่งหัวข้อ */
+    h1, h2, h3 {
+        font-family: 'Prompt', sans-serif !important;
+        font-weight: 500 !important;
+    }
+
+    /* ปรับแต่งปุ่มและ input */
+    .stButton>button, .stTextInput>div>div>input, .stSelectbox {
+        font-family: 'Prompt', sans-serif !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ==========================================
+# 🧠 3. ระบบจัดการความจำ (Session State)
 # ==========================================
 if 'selected_type' not in st.session_state:
     st.session_state.selected_type = None
@@ -29,15 +55,14 @@ def reset_calculated_data():
     st.session_state.route_coords = None
 
 # ==========================================
-# 📦 2. ดึงข้อมูลรถจาก CSV
+# 📦 4. ดึงข้อมูลรถจาก CSV
 # ==========================================
 @st.cache_data(ttl=10)
 def load_car_database():
-    # รองรับหลาย Encoding เพื่อความปลอดภัย
-    encodings = ['utf-8-sig', 'utf-16', 'utf-8', 'cp874']
+    encodings = ['utf-8-sig', 'utf-8', 'cp874', 'tis-620']
     for enc in encodings:
         try:
-            df = pd.read_csv("cars.csv", encoding=enc, skipinitialspace=True, on_bad_lines='skip')
+            df = pd.read_csv("cars.csv", encoding=enc, skipinitialspace=True)
             df.columns = df.columns.str.strip()
             if "ยี่ห้อ" in df.columns:
                 return df
@@ -48,7 +73,7 @@ def load_car_database():
 df_cars = load_car_database()
 
 # ==========================================
-# ⛽ 3. ระบบราคาน้ำมัน
+# ⛽ 5. ระบบราคาน้ำมัน
 # ==========================================
 @st.cache_data(ttl=3600) 
 def get_live_oil_prices():
@@ -70,17 +95,17 @@ FUEL_MAP = {
 }
 
 # ==========================================
-# 🗺️ 4. ฟังก์ชัน Map & Location
+# 🗺️ 6. ฟังก์ชัน Map & Location
 # ==========================================
 def get_place_name(lat, lon):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-        res = requests.get(url, headers={'User-Agent': 'RouteApp/7.0'}).json()
+        res = requests.get(url, headers={'User-Agent': 'RouteApp/8.0'}).json()
         return ", ".join(res.get("display_name", "").split(", ")[:3])
     except: return f"{lat:.4f}, {lon:.4f}"
 
 # ==========================================
-# 🎨 5. หน้าตา UI (Layout ใหม่ตามสั่ง)
+# 🎨 7. หน้าตา UI
 # ==========================================
 st.title("📍 Route Cost Calculator")
 
@@ -106,37 +131,31 @@ with col1:
 
     st.divider()
 
-    # --- ส่วนที่ 2: ข้อมูลรถ (ย้ายปุ่มไอคอนมาไว้ที่นี่) ---
+    # --- ส่วนที่ 2: ข้อมูลรถ ---
     st.subheader("ข้อมูลรถและน้ำมัน")
     
-    # ปุ่มไอคอน (Emoji ล้วน + Hover text)
     st.write("กรองประเภทรถ")
-    ic1, ic2, ic3 = st.columns([1, 1, 2.5])
+    ic1, ic2, _ = st.columns([1, 1, 2.5])
     
-    if ic1.button("🚗", help="รถยนต์", use_container_width=True, type="primary" if st.session_state.selected_type == "รถยนต์" else "secondary"):
+    if ic1.button("🚗", help="แสดงเฉพาะรถยนต์", use_container_width=True, type="primary" if st.session_state.selected_type == "รถยนต์" else "secondary"):
         st.session_state.selected_type = None if st.session_state.selected_type == "รถยนต์" else "รถยนต์"
         st.rerun()
     
-    if ic2.button("🏍️", help="มอเตอร์ไซค์", use_container_width=True, type="primary" if st.session_state.selected_type == "มอเตอร์ไซค์" else "secondary"):
+    if ic2.button("🏍️", help="แสดงเฉพาะมอเตอร์ไซค์", use_container_width=True, type="primary" if st.session_state.selected_type == "มอเตอร์ไซค์" else "secondary"):
         st.session_state.selected_type = None if st.session_state.selected_type == "มอเตอร์ไซค์" else "มอเตอร์ไซค์"
         st.rerun()
 
-    # ระบบกรองข้อมูล (Logic)
     f_df = df_cars[df_cars["ประเภท"] == st.session_state.selected_type] if st.session_state.selected_type else df_cars
 
     if not f_df.empty:
-        # เลือกยี่ห้อ
         sel_brand = st.selectbox("เลือกยี่ห้อรถ", sorted(f_df["ยี่ห้อ"].unique().tolist()))
         m_df = f_df[f_df["ยี่ห้อ"] == sel_brand]
-        # เลือกรุ่น
         sel_model = st.selectbox("เลือกรุ่นรถ", m_df["รุ่นรถ"].tolist(), on_change=reset_calculated_data)
         car_info = m_df[m_df["รุ่นรถ"] == sel_model].iloc[0]
         
-        # เลือกปั๊ม
         if df_prices is not None:
             sel_station = st.selectbox("เลือกปั๊มน้ำมัน", ["Average"] + [c for c in df_prices.columns if c != "Average"], on_change=reset_calculated_data)
         
-        # ปุ่มคำนวณ (ย้ายมาล่างสุดของส่วนนี้)
         if st.button("คำนวณการเดินทาง", type="primary", use_container_width=True):
             s_c = st.session_state.pin_start
             if not s_c and origin:
@@ -149,7 +168,7 @@ with col1:
                 e_c = [float(r[0]['lat']), float(r[0]['lon'])] if r else None
 
             if s_c and e_c:
-                with st.spinner("กำลังคำนวณ..."):
+                with st.spinner("กำลังคำนวณเส้นทาง..."):
                     route_res = requests.get(f"http://router.project-osrm.org/route/v1/driving/{s_c[1]},{s_c[0]};{e_c[1]},{e_c[0]}?overview=full&geometries=geojson").json()
                     if route_res.get("code") == "Ok":
                         st.session_state.distance = route_res["routes"][0]["distance"] / 1000
@@ -158,7 +177,7 @@ with col1:
                         st.session_state.calculated = True
             else: st.error("❌ หาพิกัดไม่พบครับ")
     else:
-        st.warning("⚠️ ไม่พบข้อมูลในหมวดนี้ ตรวจสอบไฟล์ CSV นะครับ")
+        st.warning("⚠️ ไม่พบข้อมูลรถในระบบ")
 
     # --- ส่วนที่ 3: สรุปผล ---
     if st.session_state.calculated and st.session_state.distance:
