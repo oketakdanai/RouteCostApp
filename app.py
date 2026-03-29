@@ -10,15 +10,30 @@ import os
 st.set_page_config(page_title="Route Cost Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 # ==========================================
-# 🎨 2. Modern UI Styling (Font Prompt + Cards)
+# 🎨 2. Strong Prompt Font Injection (CSS)
 # ==========================================
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap');
-    html, body, [class*="css"], .stMarkdown, .stButton, .stSelectbox {
+
+    /* บังคับ Font ทุกองค์ประกอบในแอปด้วย !important */
+    * {
         font-family: 'Prompt', sans-serif !important;
     }
+
+    /* เน้นจุดสำคัญที่มักจะดื้อ */
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .stMarkdown, p, span, div, label, .stMetric {
+        font-family: 'Prompt', sans-serif !important;
+    }
+
+    /* สไตล์ปุ่มและช่องกรอกข้อมูล */
+    .stButton>button, .stSelectbox, .stTextInput input {
+        font-family: 'Prompt', sans-serif !important;
+    }
+
+    /* --- ส่วนตกแต่ง Dashboard UI --- */
     .stApp { background-color: #0F172A; }
+    
     .metric-card {
         background-color: #1E293B;
         border-radius: 15px;
@@ -26,15 +41,14 @@ st.markdown("""
         border: 1px solid #334155;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         text-align: center;
+        font-family: 'Prompt', sans-serif !important;
     }
+
+    .card-label { color: #94A3B8; font-size: 0.9rem; margin-bottom: 5px; }
+    .card-value { color: #F8FAFC; font-size: 1.4rem; font-weight: 600; }
+
     div.stButton > button { border-radius: 12px !important; transition: all 0.3s ease; }
     h1, h2, h3 { color: #F8FAFC !important; font-weight: 600 !important; }
-    .stTextInput input, .stSelectbox div[data-baseweb="select"] {
-        background-color: #1E293B !important;
-        color: white !important;
-        border-radius: 10px !important;
-        border: 1px solid #334155 !important;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -84,19 +98,9 @@ df_prices = get_live_oil_prices()
 FUEL_MAP = {"เบนซิน": "gasoline_95", "แก๊สโซฮอล์ 95": "gasohol_95", "แก๊สโซฮอล์ 91": "gasohol_91", "E20": "gasohol_e20", "ดีเซล": "diesel", "ดีเซล B7": "diesel"}
 
 # ==========================================
-# 🗺️ 6. Helpers
+# 🎨 6. UI Layout
 # ==========================================
-def get_place_name(lat, lon):
-    try:
-        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-        res = requests.get(url, headers={'User-Agent': 'RouteApp/Final'}).json()
-        return ", ".join(res.get("display_name", "").split(", ")[:3])
-    except: return f"{lat:.4f}, {lon:.4f}"
-
-# ==========================================
-# 🎨 7. UI Layout
-# ==========================================
-st.markdown(f'<h1 style="text-align: left; margin-bottom: 30px;">🛰️ Route Cost Calculator</h1>', unsafe_allow_html=True)
+st.markdown('<h1 style="text-align: left; margin-bottom: 30px;">🛰️ Route Cost Calculator</h1>', unsafe_allow_html=True)
 col1, col2 = st.columns([1, 1.8], gap="large")
 
 with col1:
@@ -112,15 +116,18 @@ with col1:
             st.session_state.map_mode_active = True; st.rerun()
     else:
         st.info("💡 คลิกบนแผนที่เพื่อระบุตำแหน่ง")
-        st.session_state.active_pin_to_set = st.radio("เลือกจุดที่จะปัก:", ["🟢 จุดเริ่มต้น", "🔴 ปลายทาง"], horizontal=True)
+        st.session_state.active_pin_to_set = st.radio("คุณกำลังจะปัก:", ["🟢 จุดเริ่มต้น", "🔴 ปลายทาง"], horizontal=True)
         if st.button("❌ ปิดโหมดปักหมุด", type="primary", use_container_width=True):
             st.session_state.map_mode_active = False; st.rerun()
 
     st.divider()
     st.markdown("### 🚗 ข้อมูลรถและน้ำมัน")
     ic1, ic2, _ = st.columns([1, 1, 2])
+    
+    # ปุ่มไอคอนรถยนต์ / มอไซค์
     if ic1.button("🚗", help="เลือกเฉพาะรถยนต์", use_container_width=True, type="primary" if st.session_state.selected_type == "รถยนต์" else "secondary"):
         st.session_state.selected_type = None if st.session_state.selected_type == "รถยนต์" else "รถยนต์"; st.rerun()
+    
     if ic2.button("🏍️", help="เลือกเฉพาะมอเตอร์ไซค์", use_container_width=True, type="primary" if st.session_state.selected_type == "มอเตอร์ไซค์" else "secondary"):
         st.session_state.selected_type = None if st.session_state.selected_type == "มอเตอร์ไซค์" else "มอเตอร์ไซค์"; st.rerun()
 
@@ -136,11 +143,11 @@ with col1:
         if st.button("🚀 คำนวณเส้นทางและค่าใช้จ่าย", type="primary", use_container_width=True):
             s_c = st.session_state.pin_start
             if not s_c and origin:
-                r = requests.get(f"https://nominatim.openstreetmap.org/search?q={origin}&format=json&limit=1").json()
+                r = requests.get(f"https://nominatim.openstreetmap.org/search?q={origin.replace('📍 ','')}&format=json&limit=1").json()
                 s_c = [float(r[0]['lat']), float(r[0]['lon'])] if r else None
             e_c = st.session_state.pin_end
             if not e_c and dest:
-                r = requests.get(f"https://nominatim.openstreetmap.org/search?q={dest}&format=json&limit=1").json()
+                r = requests.get(f"https://nominatim.openstreetmap.org/search?q={dest.replace('📍 ','')}&format=json&limit=1").json()
                 e_c = [float(r[0]['lat']), float(r[0]['lon'])] if r else None
             if s_c and e_c:
                 with st.spinner("กำลังประมวลผล..."):
@@ -154,7 +161,6 @@ with col1:
 
 with col2:
     st.markdown("### 🏁 แผนที่แสดงเส้นทาง")
-    # กลับมาใช้ Dark Matter แบบคลีนๆ ไม่มีเส้นขอบกวนใจ
     m = folium.Map(location=[13.75, 100.5], zoom_start=6, tiles='CartoDB dark_matter') 
     
     if st.session_state.pin_start: folium.Marker(st.session_state.pin_start, icon=folium.Icon(color="green", icon="play")).add_to(m)
@@ -164,14 +170,8 @@ with col2:
         m.fit_bounds([st.session_state.start_coords, st.session_state.end_coords])
     
     map_data = st_folium(m, width="100%", height=550, key="map")
-    if st.session_state.map_mode_active and map_data.get("last_clicked"):
-        pos = [map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]]
-        if st.session_state.active_pin_to_set == "🟢 จุดเริ่มต้น":
-            st.session_state.pin_start, st.session_state.origin_text = pos, f"📍 {get_place_name(pos[0], pos[1])}"
-        else:
-            st.session_state.pin_end, st.session_state.dest_text = pos, f"📍 {get_place_name(pos[0], pos[1])}"
-        reset_calculated_data(); st.rerun()
-
+    
+    # สรุปผลการเดินทาง
     if st.session_state.calculated and st.session_state.distance:
         st.markdown("### 📊 สรุปผลการเดินทาง")
         f_type, km_l = str(car_info["ประเภทน้ำมัน"]).strip(), float(car_info["อัตราสิ้นเปลือง (กม./ลิตร)"])
