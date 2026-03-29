@@ -26,36 +26,35 @@ def reset_calculated_data():
     st.session_state.route_coords = None
 
 # ==========================================
-# 📦 2. ดึงข้อมูลรถจาก CSV (เวอร์ชัน Debug)
+# 📦 2. ดึงข้อมูลรถจาก CSV (เวอร์ชันอ่านได้ทุกภาษา)
 # ==========================================
-@st.cache_data(ttl=10) # ลดเวลาแคชเหลือ 10 วินาทีเพื่อให้เห็นผลไวขึ้น
+@st.cache_data(ttl=10)
 def load_car_database():
-    try:
-        # ลองอ่านไฟล์ด้วยการบังคับข้ามบรรทัดที่เสีย (on_bad_lines)
-        df = pd.read_csv("cars.csv", encoding='utf-8-sig', skipinitialspace=True, on_bad_lines='skip')
-        
-        # ลบช่องว่างที่อาจจะแฝงอยู่ในหัวข้อคอลัมน์ (เช่น " ยี่ห้อ")
-        df.columns = df.columns.str.strip()
-        
-        # เช็กว่าคอลัมน์มาครบไหม
-        required_cols = ["ยี่ห้อ", "รุ่นรถ", "ประเภทน้ำมัน", "อัตราสิ้นเปลือง (กม./ลิตร)"]
-        for col in required_cols:
-            if col not in df.columns:
-                st.error(f"❌ ในไฟล์ CSV ขาดคอลัมน์: '{col}' (เช็กตัวสะกดและวรรคตอนดูนะครับ)")
-                return pd.DataFrame()
-        return df
-    except Exception as e:
-        # 🚩 ถ้าพัง คราวนี้มันจะบอก Error ตรงนี้เลยครับ
-        st.error(f"❌ พยายามอ่านไฟล์ cars.csv แต่ไม่สำเร็จ: {e}")
-        return pd.DataFrame()
+    # รายการภาษาที่แอปจะพยายามอ่าน (เพิ่ม utf-16 เพื่อแก้ปัญหา byte 0xff)
+    encodings = ['utf-8-sig', 'utf-16', 'tis-620', 'cp874', 'utf-8']
+    
+    for enc in encodings:
+        try:
+            df = pd.read_csv("cars.csv", encoding=enc, skipinitialspace=True, on_bad_lines='skip')
+            # ลบช่องว่างส่วนเกินในหัวข้อคอลัมน์
+            df.columns = df.columns.str.strip()
+            # เช็คว่ามีคอลัมน์ที่ต้องการครบไหม
+            if "ยี่ห้อ" in df.columns:
+                return df
+        except:
+            continue
+            
+    # ถ้าพยายามทุกภาษาแล้วยังไม่ได้ ให้บอก Error
+    st.error("❌ ไม่สามารถอ่านไฟล์ cars.csv ได้ (ปัญหาเรื่องการเข้ารหัสไฟล์)")
+    return pd.DataFrame()
 
 df_cars = load_car_database()
 
-# --- ถ้าอ่านไฟล์ไม่ได้เลย ให้ใช้ข้อมูลตัวอย่างเพื่อไม่ให้แอปขาวโพลน ---
+# ข้อมูลสำรองกรณีอ่านไฟล์ไม่สำเร็จจริงๆ
 if df_cars.empty:
     df_cars = pd.DataFrame({
-        "ยี่ห้อ": ["(ระบบยังอ่านไฟล์ cars.csv ไม่ได้)"],
-        "รุ่นรถ": ["กรุณาเช็ก Error สีแดงด้านบนครับ"],
+        "ยี่ห้อ": ["(รอการอัปเดตไฟล์)"],
+        "รุ่นรถ": ["เช็กชื่อไฟล์ cars.csv ใน GitHub"],
         "ประเภทน้ำมัน": ["แก๊สโซฮอล์ 91"],
         "อัตราสิ้นเปลือง (กม./ลิตร)": [1.0]
     })
@@ -90,7 +89,7 @@ FUEL_MAP = {
 def get_place_name(lat, lon):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-        res = requests.get(url, headers={'User-Agent': 'RouteApp/4.3'}).json()
+        res = requests.get(url, headers={'User-Agent': 'RouteApp/4.4'}).json()
         return ", ".join(res.get("display_name", "").split(", ")[:3])
     except: return f"{lat:.4f}, {lon:.4f}"
 
