@@ -26,27 +26,42 @@ def reset_calculated_data():
     st.session_state.route_coords = None
 
 # ==========================================
-# 📦 2. ดึงข้อมูลรถจาก CSV
+# 📦 2. ดึงข้อมูลรถจาก CSV (เวอร์ชัน Debug)
 # ==========================================
-@st.cache_data(ttl=60)
-def get_car_data():
+@st.cache_data(ttl=10) # ลดเวลาแคชเหลือ 10 วินาทีเพื่อให้เห็นผลไวขึ้น
+def load_car_database():
     try:
-        # ใช้ utf-8-sig เพื่อให้อ่านภาษาไทยจาก VSC/Windows ได้ถูกต้อง 100%
-        df = pd.read_csv("cars.csv", encoding='utf-8-sig')
+        # ลองอ่านไฟล์ด้วยการบังคับข้ามบรรทัดที่เสีย (on_bad_lines)
+        df = pd.read_csv("cars.csv", encoding='utf-8-sig', skipinitialspace=True, on_bad_lines='skip')
+        
+        # ลบช่องว่างที่อาจจะแฝงอยู่ในหัวข้อคอลัมน์ (เช่น " ยี่ห้อ")
+        df.columns = df.columns.str.strip()
+        
+        # เช็กว่าคอลัมน์มาครบไหม
+        required_cols = ["ยี่ห้อ", "รุ่นรถ", "ประเภทน้ำมัน", "อัตราสิ้นเปลือง (กม./ลิตร)"]
+        for col in required_cols:
+            if col not in df.columns:
+                st.error(f"❌ ในไฟล์ CSV ขาดคอลัมน์: '{col}' (เช็กตัวสะกดและวรรคตอนดูนะครับ)")
+                return pd.DataFrame()
         return df
-    except:
-        # ข้อมูลสำรองเผื่อไฟล์มีปัญหา
-        return pd.DataFrame({
-            "ยี่ห้อ": ["Honda"],
-            "รุ่นรถ": ["Wave 110i"],
-            "ประเภทน้ำมัน": ["แก๊สโซฮอล์ 91"],
-            "อัตราสิ้นเปลือง (กม./ลิตร)": [70.0]
-        })
+    except Exception as e:
+        # 🚩 ถ้าพัง คราวนี้มันจะบอก Error ตรงนี้เลยครับ
+        st.error(f"❌ พยายามอ่านไฟล์ cars.csv แต่ไม่สำเร็จ: {e}")
+        return pd.DataFrame()
 
-df_cars = get_car_data()
+df_cars = load_car_database()
+
+# --- ถ้าอ่านไฟล์ไม่ได้เลย ให้ใช้ข้อมูลตัวอย่างเพื่อไม่ให้แอปขาวโพลน ---
+if df_cars.empty:
+    df_cars = pd.DataFrame({
+        "ยี่ห้อ": ["(ระบบยังอ่านไฟล์ cars.csv ไม่ได้)"],
+        "รุ่นรถ": ["กรุณาเช็ก Error สีแดงด้านบนครับ"],
+        "ประเภทน้ำมัน": ["แก๊สโซฮอล์ 91"],
+        "อัตราสิ้นเปลือง (กม./ลิตร)": [1.0]
+    })
 
 # ==========================================
-# ⛽ 3. ระบบราคาน้ำมัน (Real-time API)
+# ⛽ 3. ระบบราคาน้ำมัน
 # ==========================================
 @st.cache_data(ttl=3600) 
 def get_live_oil_prices():
@@ -62,32 +77,25 @@ def get_live_oil_prices():
     except: return None
 
 df_prices = get_live_oil_prices()
-
-# จับคู่ชื่อน้ำมันจาก CSV ให้ตรงกับชื่อใน API
 FUEL_MAP = {
-    "เบนซิน": "gasoline_95",
-    "แก๊สโซฮอล์ 95": "gasohol_95", 
-    "แก๊สโซฮอล์ 91": "gasohol_91", 
-    "E20": "gasohol_e20", 
-    "E85": "gasohol_e85", 
-    "ดีเซล": "diesel", 
-    "ดีเซล B7": "diesel",
-    "Diesel B7": "diesel",
-    "Premium Diesel": "premium_diesel"
+    "เบนซิน": "gasoline_95", "แก๊สโซฮอล์ 95": "gasohol_95", 
+    "แก๊สโซฮอล์ 91": "gasohol_91", "E20": "gasohol_e20", 
+    "E85": "gasohol_e85", "ดีเซล": "diesel", 
+    "ดีเซล B7": "diesel", "Diesel B7": "diesel", "Premium Diesel": "premium_diesel"
 }
 
 # ==========================================
-# 🗺️ 4. ฟังก์ชัน Map & Location
+# 🗺️ 4. ฟังก์ชันช่วยเหลือ
 # ==========================================
 def get_place_name(lat, lon):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-        res = requests.get(url, headers={'User-Agent': 'RouteApp/4.2'}).json()
+        res = requests.get(url, headers={'User-Agent': 'RouteApp/4.3'}).json()
         return ", ".join(res.get("display_name", "").split(", ")[:3])
     except: return f"{lat:.4f}, {lon:.4f}"
 
 # ==========================================
-# 🎨 5. หน้าตา UI (Frontend)
+# 🎨 5. หน้าตา UI
 # ==========================================
 st.title("📍 Route Cost Calculator")
 col1, col2 = st.columns([1, 1.5])
@@ -97,44 +105,35 @@ with col1:
     origin = st.text_input("จุดเริ่มต้น", value=st.session_state.origin_text)
     dest = st.text_input("จุดหมายปลายทาง", value=st.session_state.dest_text)
     
-    if origin != st.session_state.origin_text: 
-        st.session_state.origin_text = origin
-        reset_calculated_data()
-    if dest != st.session_state.dest_text: 
-        st.session_state.dest_text = dest
-        reset_calculated_data()
+    if origin != st.session_state.origin_text: st.session_state.origin_text = origin; reset_calculated_data()
+    if dest != st.session_state.dest_text: st.session_state.dest_text = dest; reset_calculated_data()
 
     if not st.session_state.map_mode_active:
         if st.button("🗺️ เลือกจากแผนที่", use_container_width=True):
-            st.session_state.map_mode_active = True
-            st.rerun()
+            st.session_state.map_mode_active = True; st.rerun()
     else:
         st.info("👇 คลิกบนแผนที่ทางขวาเพื่อปักหมุด")
         st.session_state.active_pin_to_set = st.radio("เลือกจุดที่จะปัก:", ["🟢 จุดเริ่มต้น (Start)", "🔴 ปลายทาง (End)"], horizontal=True)
         if st.button("❌ ปิดโหมดปักหมุด", type="primary", use_container_width=True):
-            st.session_state.map_mode_active = False
-            st.rerun()
+            st.session_state.map_mode_active = False; st.rerun()
 
     st.divider()
     st.subheader("ข้อมูลรถและน้ำมัน")
     
-    # --- ระบบเลือก Brand > Model (Cascading Select) ---
+    # ดึงรายชื่อยี่ห้อ
     brands = sorted(df_cars["ยี่ห้อ"].unique().tolist())
     sel_brand = st.selectbox("เลือกยี่ห้อรถ", brands)
     
-    # กรองรุ่นรถตามยี่ห้อที่เลือก
     models_df = df_cars[df_cars["ยี่ห้อ"] == sel_brand]
     sel_model = st.selectbox("เลือกรุ่นรถ", models_df["รุ่นรถ"].tolist(), on_change=reset_calculated_data)
     
     car_info = models_df[models_df["รุ่นรถ"] == sel_model].iloc[0]
     
-    # --- เลือกปั๊มน้ำมัน ---
     if df_prices is not None:
         stations = ["Average"] + [c for c in df_prices.columns if c != "Average"]
         sel_station = st.selectbox("เลือกปั๊มน้ำมัน", stations, on_change=reset_calculated_data)
     
     if st.button("คำนวณการเดินทาง", type="primary", use_container_width=True):
-        # หาพิกัด
         s_c = st.session_state.pin_start
         if not s_c and origin:
             r = requests.get(f"https://nominatim.openstreetmap.org/search?q={origin}&format=json&limit=1").json()
@@ -153,51 +152,37 @@ with col1:
                     st.session_state.route_coords = [[c[1], c[0]] for c in route_res["routes"][0]["geometry"]["coordinates"]]
                     st.session_state.start_coords, st.session_state.end_coords = s_c, e_c
                     st.session_state.calculated = True
-        else:
-            st.error("❌ หาพิกัดไม่พบ กรุณาระบุชื่อสถานที่ให้ชัดเจนครับ")
+        else: st.error("❌ หาพิกัดไม่พบครับ")
 
-    # --- แสดงผลสรุป ---
     if st.session_state.calculated and st.session_state.distance:
         f_type = str(car_info["ประเภทน้ำมัน"]).strip()
         km_l = float(car_info["อัตราสิ้นเปลือง (กม./ลิตร)"])
         
-        # ดึงราคาจาก API
-        price_key = FUEL_MAP.get(f_type)
-        if price_key and price_key in df_prices.index:
-            current_price = df_prices.loc[price_key, sel_station]
-            if current_price > 0:
-                cost = (st.session_state.distance / km_l) * current_price
-                st.divider()
-                st.subheader("สรุปผลการคำนวณ")
-                m1, m2 = st.columns(2)
-                m1.metric("ระยะทางจริง (กม.)", f"{st.session_state.distance:.2f}")
-                m2.metric("ค่าน้ำมันรวม (บาท)", f"{cost:.2f}")
-                st.info(f"⛽ ใช้ราคา {f_type} จากปั๊ม {sel_station}: {current_price} บาท/ลิตร\n(รถรุ่นนี้ประหยัดน้ำมันเฉลี่ย {km_l} กม./ลิตร)")
+        price = df_prices.loc[FUEL_MAP.get(f_type), sel_station] if FUEL_MAP.get(f_type) in df_prices.index else 0
+        
+        if price > 0:
+            st.divider(); st.subheader("สรุปผล")
+            m1, m2 = st.columns(2)
+            m1.metric("ระยะทางจริง (กม.)", f"{st.session_state.distance:.2f}")
+            m2.metric("ค่าน้ำมันรวม (บาท)", f"{(st.session_state.distance/km_l)*price:.2f}")
+            st.info(f"⛽ {f_type} {price} บาท/ลิตร | ประหยัดเฉลี่ย {km_l} กม./ลิตร")
 
 with col2:
     st.subheader("แผนที่เส้นทาง")
     m = folium.Map(location=[13.75, 100.5], zoom_start=6)
     
-    if st.session_state.pin_start:
-        folium.Marker(st.session_state.pin_start, icon=folium.Icon(color="green")).add_to(m)
-    if st.session_state.pin_end:
-        folium.Marker(st.session_state.pin_end, icon=folium.Icon(color="red")).add_to(m)
-    
+    if st.session_state.pin_start: folium.Marker(st.session_state.pin_start, icon=folium.Icon(color="green")).add_to(m)
+    if st.session_state.pin_end: folium.Marker(st.session_state.pin_end, icon=folium.Icon(color="red")).add_to(m)
     if st.session_state.calculated and st.session_state.route_coords:
-        folium.PolyLine(st.session_state.route_coords, color="blue", weight=5, opacity=0.8).add_to(m)
-        folium.Marker(st.session_state.start_coords, icon=folium.Icon(color="green", icon="play")).add_to(m)
-        folium.Marker(st.session_state.end_coords, icon=folium.Icon(color="red", icon="flag")).add_to(m)
+        folium.PolyLine(st.session_state.route_coords, color="blue", weight=5).add_to(m)
         m.fit_bounds([st.session_state.start_coords, st.session_state.end_coords])
-
-    map_data = st_folium(m, width="100%", height=650, key="map")
+    
+    map_data = st_folium(m, width="100%", height=600, key="map")
     
     if st.session_state.map_mode_active and map_data.get("last_clicked"):
         pos = [map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]]
         if st.session_state.active_pin_to_set == "🟢 จุดเริ่มต้น (Start)":
-            st.session_state.pin_start = pos
-            st.session_state.origin_text = f"📍 {get_place_name(pos[0], pos[1])}"
+            st.session_state.pin_start, st.session_state.origin_text = pos, f"📍 {get_place_name(pos[0], pos[1])}"
         else:
-            st.session_state.pin_end = pos
-            st.session_state.dest_text = f"📍 {get_place_name(pos[0], pos[1])}"
-        reset_calculated_data()
-        st.rerun()
+            st.session_state.pin_end, st.session_state.dest_text = pos, f"📍 {get_place_name(pos[0], pos[1])}"
+        reset_calculated_data(); st.rerun()
