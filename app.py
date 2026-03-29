@@ -5,6 +5,8 @@ import pandas as pd
 import requests
 import folium
 from streamlit_folium import st_folium
+import re        # <- เพิ่มตัวช่วยจัดการข้อความ
+import textwrap  # <- เพิ่มตัวช่วยจัดเรียงบรรทัด
 
 st.set_page_config(page_title="Route Cost", layout="wide")
 
@@ -45,13 +47,22 @@ def reset_calculated_data():
 # ==========================================
 @st.cache_resource
 def init_connection():
-    # 1. ดึงข้อมูลจากตู้นิรภัย
+    # ดึงข้อมูลจากตู้นิรภัย (Secrets) ของ Streamlit
     creds_dict = json.loads(st.secrets["google_credentials"])
     
-    # 🔥 2. เติมบรรทัดนี้กลับมา: บังคับให้กุญแจตัดขึ้นบรรทัดใหม่ให้ถูกต้อง (แก้อาการ ValueError)
-    creds_dict["private_key"] = creds_dict["private_key"].replace('\\n', '\n')
+    # 🔥🔥🔥 ระบบ "เครื่องซักผ้ากุญแจ" (Key Washer) 🔥🔥🔥
+    # ดึงกุญแจเดิมมาล้างช่องว่างและจัดเรียงบรรทัดใหม่ให้ Google อ่านออก 100%
+    raw_key = creds_dict.get("private_key", "")
+    raw_key = raw_key.replace("-----BEGIN PRIVATE KEY-----", "")
+    raw_key = raw_key.replace("-----END PRIVATE KEY-----", "")
+    raw_key = re.sub(r'\s+', '', raw_key) # ลบช่องว่างและบรรทัดที่ผิดเพี้ยนทิ้งให้เกลี้ยง
+    raw_key = raw_key.replace("\\n", "")
     
-    # 3. ส่งกุญแจที่สมบูรณ์ไปเปิด Google Sheets
+    # ประกอบร่างกุญแจใหม่ให้เป๊ะตามมาตรฐาน
+    clean_key = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(textwrap.wrap(raw_key, 64)) + "\n-----END PRIVATE KEY-----\n"
+    creds_dict["private_key"] = clean_key
+    # 🔥🔥🔥 จบการทำงานเครื่องซักผ้า 🔥🔥🔥
+    
     client = gspread.service_account_from_dict(creds_dict)
     return client.open("Route Cost") 
 
@@ -107,7 +118,7 @@ def get_coords_from_text(place_name):
     if not place_name.strip() or place_name.startswith("📍"):
         return None, None
     url = f"https://nominatim.openstreetmap.org/search?q={place_name}&format=json&limit=1"
-    headers = {'User-Agent': 'RouteCostApp/1.5'}
+    headers = {'User-Agent': 'RouteCostApp/1.6'}
     try:
         res = requests.get(url, headers=headers).json()
         if len(res) > 0:
@@ -118,7 +129,7 @@ def get_coords_from_text(place_name):
 
 def get_place_name(lat, lon):
     url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-    headers = {'User-Agent': 'RouteCostApp/1.5'}
+    headers = {'User-Agent': 'RouteCostApp/1.6'}
     try:
         res = requests.get(url, headers=headers).json()
         if "display_name" in res:
