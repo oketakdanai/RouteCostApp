@@ -41,16 +41,18 @@ def reset_calculated_data():
     st.session_state.end_coords = None
 
 # ==========================================
-# 📦 2. เชื่อมต่อ Google Sheets (เวอร์ชันตัดของเก่าทิ้ง ใช้ gspread ตรงๆ)
+# 📦 2. เชื่อมต่อ Google Sheets 
 # ==========================================
 @st.cache_resource
 def init_connection():
-    # ดึงข้อมูลจากตู้นิรภัย (Secrets) ของ Streamlit
+    # 1. ดึงข้อมูลจากตู้นิรภัย
     creds_dict = json.loads(st.secrets["google_credentials"])
     
-    # 🔥 จุดแก้ปัญหาบอสใหญ่: โยนไลบรารีเก่าทิ้ง แล้วใช้ gspread เปิดล็อกโดยตรงเลย!
-    client = gspread.service_account_from_dict(creds_dict)
+    # 🔥 2. เติมบรรทัดนี้กลับมา: บังคับให้กุญแจตัดขึ้นบรรทัดใหม่ให้ถูกต้อง (แก้อาการ ValueError)
+    creds_dict["private_key"] = creds_dict["private_key"].replace('\\n', '\n')
     
+    # 3. ส่งกุญแจที่สมบูรณ์ไปเปิด Google Sheets
+    client = gspread.service_account_from_dict(creds_dict)
     return client.open("Route Cost") 
 
 conn = init_connection()
