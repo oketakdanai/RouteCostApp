@@ -1,7 +1,6 @@
 import streamlit as st
 import gspread
 import json  
-from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import requests
 import folium
@@ -42,20 +41,16 @@ def reset_calculated_data():
     st.session_state.end_coords = None
 
 # ==========================================
-# 📦 2. เชื่อมต่อ Google Sheets (เวอร์ชันใช้ Secrets ป้องกัน Error)
+# 📦 2. เชื่อมต่อ Google Sheets (เวอร์ชันตัดของเก่าทิ้ง ใช้ gspread ตรงๆ)
 # ==========================================
 @st.cache_resource
 def init_connection():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
     # ดึงข้อมูลจากตู้นิรภัย (Secrets) ของ Streamlit
     creds_dict = json.loads(st.secrets["google_credentials"])
     
-    # 🔥 จุดแก้ปัญหาบอสใหญ่: บังคับแปลงตัวอักษร \n ให้เป็นการ "ขึ้นบรรทัดใหม่" จริงๆ
-    creds_dict["private_key"] = creds_dict["private_key"].replace('\\n', '\n')
+    # 🔥 จุดแก้ปัญหาบอสใหญ่: โยนไลบรารีเก่าทิ้ง แล้วใช้ gspread เปิดล็อกโดยตรงเลย!
+    client = gspread.service_account_from_dict(creds_dict)
     
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
     return client.open("Route Cost") 
 
 conn = init_connection()
@@ -110,7 +105,7 @@ def get_coords_from_text(place_name):
     if not place_name.strip() or place_name.startswith("📍"):
         return None, None
     url = f"https://nominatim.openstreetmap.org/search?q={place_name}&format=json&limit=1"
-    headers = {'User-Agent': 'RouteCostApp/1.4'}
+    headers = {'User-Agent': 'RouteCostApp/1.5'}
     try:
         res = requests.get(url, headers=headers).json()
         if len(res) > 0:
@@ -121,7 +116,7 @@ def get_coords_from_text(place_name):
 
 def get_place_name(lat, lon):
     url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-    headers = {'User-Agent': 'RouteCostApp/1.4'}
+    headers = {'User-Agent': 'RouteCostApp/1.5'}
     try:
         res = requests.get(url, headers=headers).json()
         if "display_name" in res:
