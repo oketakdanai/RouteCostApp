@@ -47,8 +47,22 @@ def reset_calculated_data():
 # ==========================================
 @st.cache_resource
 def init_connection():
-    # ดึงข้อมูลจากตู้นิรภัย (Secrets) ของ Streamlit
-    creds_dict = json.loads(st.secrets["google_credentials"])
+    try:
+        # 1. โหลดข้อมูลกุญแจ
+        creds_json = st.secrets["google_credentials"]
+        creds_dict = json.loads(creds_json, strict=False)
+        
+        # 2. จัดการเรื่องตัวตัดบรรทัดให้ชัวร์ที่สุด
+        if "private_key" in creds_dict:
+            # ลบช่องว่างที่อาจติดมาจากการก๊อปปี้ และแปลง \n ให้ถูกต้อง
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
+        # 3. ล็อกอิน
+        client = gspread.service_account_from_dict(creds_dict)
+        return client.open("Route Cost")
+    except Exception as e:
+        st.error(f"⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ Google Sheets: {e}")
+        return None
     
     # 🔥🔥🔥 ระบบ "เครื่องซักผ้ากุญแจ" (Key Washer) 🔥🔥🔥
     # ดึงกุญแจเดิมมาล้างช่องว่างและจัดเรียงบรรทัดใหม่ให้ Google อ่านออก 100%
