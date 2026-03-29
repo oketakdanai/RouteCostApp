@@ -4,12 +4,10 @@ import requests
 import folium
 from streamlit_folium import st_folium
 import json
+import os
 
 # 1. ตั้งค่าหน้าตาเบื้องต้น
 st.set_page_config(page_title="Route Cost Dashboard", layout="wide", initial_sidebar_state="collapsed")
-
-# ลิงก์ GeoJSON ขอบเขตประเทศไทย
-THAILAND_GEOJSON = "https://raw.githubusercontent.com/half-rain/thailand-geojson/master/thailand.json"
 
 # ==========================================
 # 🎨 2. Modern UI Styling (CSS Injection)
@@ -17,15 +15,10 @@ THAILAND_GEOJSON = "https://raw.githubusercontent.com/half-rain/thailand-geojson
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap');
-
     html, body, [class*="css"], .stMarkdown, .stButton, .stSelectbox {
         font-family: 'Prompt', sans-serif !important;
     }
-
-    .stApp {
-        background-color: #0F172A; 
-    }
-
+    .stApp { background-color: #0F172A; }
     .metric-card {
         background-color: #1E293B;
         border-radius: 15px;
@@ -34,22 +27,8 @@ st.markdown("""
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         text-align: center;
     }
-
-    div.stButton > button {
-        border-radius: 12px !important;
-        transition: all 0.3s ease;
-    }
-    
-    div[data-testid="stHorizontalBlock"] button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
-    }
-
-    h1, h2, h3 {
-        color: #F8FAFC !important;
-        font-weight: 600 !important;
-    }
-    
+    div.stButton > button { border-radius: 12px !important; transition: all 0.3s ease; }
+    h1, h2, h3 { color: #F8FAFC !important; font-weight: 600 !important; }
     .stTextInput input, .stSelectbox div[data-baseweb="select"] {
         background-color: #1E293B !important;
         color: white !important;
@@ -60,20 +39,12 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 🧠 3. ระบบจัดการความจำ (Session State)
+# 🧠 3. ระบบจัดการความจำ
 # ==========================================
 if 'selected_type' not in st.session_state: st.session_state.selected_type = None
-
-keys = ['calculated', 'distance', 'route_coords', 'start_coords', 'end_coords', 
-        'pin_start', 'pin_end', 'map_mode_active', 'active_pin_to_set', 
-        'origin_text', 'dest_text']
-
+keys = ['calculated', 'distance', 'route_coords', 'start_coords', 'end_coords', 'pin_start', 'pin_end', 'map_mode_active', 'active_pin_to_set', 'origin_text', 'dest_text']
 for key in keys:
-    if key not in st.session_state:
-        st.session_state[key] = False if 'active' in key or 'calculated' in key else None
-
-if st.session_state.origin_text is None: st.session_state.origin_text = ""
-if st.session_state.dest_text is None: st.session_state.dest_text = ""
+    if key not in st.session_state: st.session_state[key] = False if 'active' in key or 'calculated' in key else None
 
 def reset_calculated_data():
     st.session_state.calculated = False
@@ -89,7 +60,7 @@ def load_car_database():
         try:
             df = pd.read_csv("cars.csv", encoding=enc, skipinitialspace=True)
             df.columns = df.columns.str.strip()
-            if "ยี่ห้อ" in df.columns: return df
+            return df
         except: continue
     return pd.DataFrame()
 
@@ -118,7 +89,7 @@ FUEL_MAP = {"เบนซิน": "gasoline_95", "แก๊สโซฮอล์
 def get_place_name(lat, lon):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-        res = requests.get(url, headers={'User-Agent': 'RouteApp/10.0'}).json()
+        res = requests.get(url, headers={'User-Agent': 'RouteApp/11.0'}).json()
         return ", ".join(res.get("display_name", "").split(", ")[:3])
     except: return f"{lat:.4f}, {lon:.4f}"
 
@@ -126,7 +97,6 @@ def get_place_name(lat, lon):
 # 🎨 7. Main Dashboard UI
 # ==========================================
 st.markdown(f'<h1 style="text-align: left; margin-bottom: 30px;">🛰️ Route Cost Calculator</h1>', unsafe_allow_html=True)
-
 col1, col2 = st.columns([1, 1.8], gap="large")
 
 with col1:
@@ -155,13 +125,11 @@ with col1:
         st.session_state.selected_type = None if st.session_state.selected_type == "มอเตอร์ไซค์" else "มอเตอร์ไซค์"; st.rerun()
 
     f_df = df_cars[df_cars["ประเภท"] == st.session_state.selected_type] if st.session_state.selected_type else df_cars
-
     if not f_df.empty:
         sel_brand = st.selectbox("ยี่ห้อรถ", sorted(f_df["ยี่ห้อ"].unique().tolist()))
         m_df = f_df[f_df["ยี่ห้อ"] == sel_brand]
         sel_model = st.selectbox("รุ่นรถ", m_df["รุ่นรถ"].tolist(), on_change=reset_calculated_data)
         car_info = m_df[m_df["รุ่นรถ"] == sel_model].iloc[0]
-        
         if df_prices is not None:
             sel_station = st.selectbox("เลือกปั๊ม", ["Average"] + [c for c in df_prices.columns if c != "Average"], on_change=reset_calculated_data)
         
@@ -174,7 +142,6 @@ with col1:
             if not e_c and dest:
                 r = requests.get(f"https://nominatim.openstreetmap.org/search?q={dest}&format=json&limit=1").json()
                 e_c = [float(r[0]['lat']), float(r[0]['lon'])] if r else None
-
             if s_c and e_c:
                 with st.spinner("กำลังประมวลผล..."):
                     route_res = requests.get(f"http://router.project-osrm.org/route/v1/driving/{s_c[1]},{s_c[0]};{e_c[1]},{e_c[0]}?overview=full&geometries=geojson").json()
@@ -187,30 +154,30 @@ with col1:
 
 with col2:
     st.markdown("### 🏁 แผนที่แสดงเส้นทาง")
-    # 🗺️ สร้างแผนที่ Dark Mode
     m = folium.Map(location=[13.75, 100.5], zoom_start=6, tiles='CartoDB dark_matter') 
     
-    # 🔥 ไฮไลท์ประเทศไทยให้สว่างและมีเส้นเรืองแสง
-    folium.GeoJson(
-        THAILAND_GEOJSON,
-        name="Thailand Highlight",
-        style_function=lambda x: {
-            'fillColor': '#FFFFFF', # สีขาวจางๆ ข้างใน
-            'color': '#3B82F6',    # เส้นขอบสีฟ้า Neon
-            'weight': 3,           # ความหนาเส้นขอบ
-            'fillOpacity': 0.05    # ความโปร่งใสของสีขาวข้างใน (สว่างขึ้นนิดๆ)
-        }
-    ).add_to(m)
-
+    # 🔥 ระบบ Highlight ประเทศไทย (เวอร์ชันโหลดจากไฟล์ในเครื่อง ปลอดภัยกว่า 100%)
+    if os.path.exists("thailand.json"):
+        with open("thailand.json", encoding='utf-8') as f:
+            geo_data = json.load(f)
+            folium.GeoJson(
+                geo_data,
+                name="Thailand Highlight",
+                style_function=lambda x: {
+                    'fillColor': '#FFFFFF',
+                    'color': '#3B82F6',
+                    'weight': 3,
+                    'fillOpacity': 0.05
+                }
+            ).add_to(m)
+    
     if st.session_state.pin_start: folium.Marker(st.session_state.pin_start, icon=folium.Icon(color="green", icon="play")).add_to(m)
     if st.session_state.pin_end: folium.Marker(st.session_state.pin_end, icon=folium.Icon(color="red", icon="flag")).add_to(m)
-    
     if st.session_state.calculated and st.session_state.route_coords:
         folium.PolyLine(st.session_state.route_coords, color="#3B82F6", weight=6, opacity=0.8).add_to(m)
         m.fit_bounds([st.session_state.start_coords, st.session_state.end_coords])
     
     map_data = st_folium(m, width="100%", height=550, key="map")
-    
     if st.session_state.map_mode_active and map_data.get("last_clicked"):
         pos = [map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]]
         if st.session_state.active_pin_to_set == "🟢 จุดเริ่มต้น":
@@ -219,7 +186,6 @@ with col2:
             st.session_state.pin_end, st.session_state.dest_text = pos, f"📍 {get_place_name(pos[0], pos[1])}"
         reset_calculated_data(); st.rerun()
 
-    # --- ส่วนสรุปผลการเดินทาง ---
     if st.session_state.calculated and st.session_state.distance:
         st.markdown("### 📊 สรุปผลการเดินทาง")
         f_type, km_l = str(car_info["ประเภทน้ำมัน"]).strip(), float(car_info["อัตราสิ้นเปลือง (กม./ลิตร)"])
