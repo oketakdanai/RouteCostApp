@@ -8,6 +8,9 @@ import json
 # 1. ตั้งค่าหน้าตาเบื้องต้น
 st.set_page_config(page_title="Route Cost Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
+# ลิงก์ GeoJSON ขอบเขตประเทศไทย
+THAILAND_GEOJSON = "https://raw.githubusercontent.com/half-rain/thailand-geojson/master/thailand.json"
+
 # ==========================================
 # 🎨 2. Modern UI Styling (CSS Injection)
 # ==========================================
@@ -15,17 +18,14 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap');
 
-    /* ฟอนต์หลักทั้งแอป */
     html, body, [class*="css"], .stMarkdown, .stButton, .stSelectbox {
         font-family: 'Prompt', sans-serif !important;
     }
 
-    /* ตกแต่งพื้นหลังแอป */
     .stApp {
-        background-color: #0F172A; /* สีน้ำเงินเข้มจัดแบบ Dashboard */
+        background-color: #0F172A; 
     }
 
-    /* สไตล์การ์ดสรุปผล (Summary Card) */
     .metric-card {
         background-color: #1E293B;
         border-radius: 15px;
@@ -35,25 +35,21 @@ st.markdown("""
         text-align: center;
     }
 
-    /* ตกแต่งปุ่มไอคอน 🚗 🏍️ */
     div.stButton > button {
         border-radius: 12px !important;
         transition: all 0.3s ease;
     }
     
-    /* Hover effect สำหรับปุ่มประเภทรถ */
     div[data-testid="stHorizontalBlock"] button:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
     }
 
-    /* ปรับแต่งหัวข้อ */
     h1, h2, h3 {
         color: #F8FAFC !important;
         font-weight: 600 !important;
     }
     
-    /* ปรับแต่งช่อง Input */
     .stTextInput input, .stSelectbox div[data-baseweb="select"] {
         background-color: #1E293B !important;
         color: white !important;
@@ -100,7 +96,7 @@ def load_car_database():
 df_cars = load_car_database()
 
 # ==========================================
-# ⛽ 5. ระบบราคาน้ำมัน (Real-time API)
+# ⛽ 5. ระบบราคาน้ำมัน
 # ==========================================
 @st.cache_data(ttl=3600) 
 def get_live_oil_prices():
@@ -114,11 +110,7 @@ def get_live_oil_prices():
     except: return None
 
 df_prices = get_live_oil_prices()
-FUEL_MAP = {
-    "เบนซิน": "gasoline_95", "แก๊สโซฮอล์ 95": "gasohol_95", 
-    "แก๊สโซฮอล์ 91": "gasohol_91", "E20": "gasohol_e20", 
-    "ดีเซล": "diesel", "ดีเซล B7": "diesel", "Diesel B7": "diesel"
-}
+FUEL_MAP = {"เบนซิน": "gasoline_95", "แก๊สโซฮอล์ 95": "gasohol_95", "แก๊สโซฮอล์ 91": "gasohol_91", "E20": "gasohol_e20", "ดีเซล": "diesel", "ดีเซล B7": "diesel"}
 
 # ==========================================
 # 🗺️ 6. ฟังก์ชัน Map & Location
@@ -126,7 +118,7 @@ FUEL_MAP = {
 def get_place_name(lat, lon):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-        res = requests.get(url, headers={'User-Agent': 'RouteApp/9.0'}).json()
+        res = requests.get(url, headers={'User-Agent': 'RouteApp/10.0'}).json()
         return ", ".join(res.get("display_name", "").split(", ")[:3])
     except: return f"{lat:.4f}, {lon:.4f}"
 
@@ -138,10 +130,9 @@ st.markdown(f'<h1 style="text-align: left; margin-bottom: 30px;">🛰️ Route C
 col1, col2 = st.columns([1, 1.8], gap="large")
 
 with col1:
-    # --- ส่วนที่ 1: สถานที่ ---
     st.markdown("### 🗺️ รายละเอียดการเดินทาง")
-    origin = st.text_input("จุดเริ่มต้น", value=st.session_state.origin_text, placeholder="พิมพ์ชื่อสถานที่...")
-    dest = st.text_input("จุดหมายปลายทาง", value=st.session_state.dest_text, placeholder="พิมพ์ชื่อสถานที่...")
+    origin = st.text_input("จุดเริ่มต้น", value=st.session_state.origin_text)
+    dest = st.text_input("จุดหมายปลายทาง", value=st.session_state.dest_text)
     
     if origin != st.session_state.origin_text: st.session_state.origin_text = origin; reset_calculated_data()
     if dest != st.session_state.dest_text: st.session_state.dest_text = dest; reset_calculated_data()
@@ -155,20 +146,13 @@ with col1:
         if st.button("❌ ปิดโหมดปักหมุด", type="primary", use_container_width=True):
             st.session_state.map_mode_active = False; st.rerun()
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # --- ส่วนที่ 2: ข้อมูลรถ (Dashboard Selection) ---
+    st.divider()
     st.markdown("### 🚗 ข้อมูลรถและน้ำมัน")
-    
-    # ปุ่มไอคอนกรองประเภท
     ic1, ic2, _ = st.columns([1, 1, 2])
     if ic1.button("🚗", help="เลือกเฉพาะรถยนต์", use_container_width=True, type="primary" if st.session_state.selected_type == "รถยนต์" else "secondary"):
-        st.session_state.selected_type = None if st.session_state.selected_type == "รถยนต์" else "รถยนต์"
-        st.rerun()
-    
+        st.session_state.selected_type = None if st.session_state.selected_type == "รถยนต์" else "รถยนต์"; st.rerun()
     if ic2.button("🏍️", help="เลือกเฉพาะมอเตอร์ไซค์", use_container_width=True, type="primary" if st.session_state.selected_type == "มอเตอร์ไซค์" else "secondary"):
-        st.session_state.selected_type = None if st.session_state.selected_type == "มอเตอร์ไซค์" else "มอเตอร์ไซค์"
-        st.rerun()
+        st.session_state.selected_type = None if st.session_state.selected_type == "มอเตอร์ไซค์" else "มอเตอร์ไซค์"; st.rerun()
 
     f_df = df_cars[df_cars["ประเภท"] == st.session_state.selected_type] if st.session_state.selected_type else df_cars
 
@@ -181,13 +165,11 @@ with col1:
         if df_prices is not None:
             sel_station = st.selectbox("เลือกปั๊ม", ["Average"] + [c for c in df_prices.columns if c != "Average"], on_change=reset_calculated_data)
         
-        st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🚀 คำนวณเส้นทางและค่าใช้จ่าย", type="primary", use_container_width=True):
             s_c = st.session_state.pin_start
             if not s_c and origin:
                 r = requests.get(f"https://nominatim.openstreetmap.org/search?q={origin}&format=json&limit=1").json()
                 s_c = [float(r[0]['lat']), float(r[0]['lon'])] if r else None
-            
             e_c = st.session_state.pin_end
             if not e_c and dest:
                 r = requests.get(f"https://nominatim.openstreetmap.org/search?q={dest}&format=json&limit=1").json()
@@ -201,20 +183,30 @@ with col1:
                         st.session_state.route_coords = [[c[1], c[0]] for c in route_res["routes"][0]["geometry"]["coordinates"]]
                         st.session_state.start_coords, st.session_state.end_coords = s_c, e_c
                         st.session_state.calculated = True
-            else: st.error("❌ ไม่พบพิกัด กรุณาลองค้นหาหรือปักหมุดใหม่ครับ")
-    else:
-        st.warning("⚠️ ไม่พบข้อมูลรถในระบบ")
+            else: st.error("❌ ไม่พบพิกัดครับ")
 
 with col2:
-    # --- ส่วนที่ 4: แผนที่ (Modern Dark) ---
     st.markdown("### 🏁 แผนที่แสดงเส้นทาง")
-    m = folium.Map(location=[13.75, 100.5], zoom_start=6, tiles='CartoDB dark_matter') # แผนที่โทนดำ
+    # 🗺️ สร้างแผนที่ Dark Mode
+    m = folium.Map(location=[13.75, 100.5], zoom_start=6, tiles='CartoDB dark_matter') 
     
+    # 🔥 ไฮไลท์ประเทศไทยให้สว่างและมีเส้นเรืองแสง
+    folium.GeoJson(
+        THAILAND_GEOJSON,
+        name="Thailand Highlight",
+        style_function=lambda x: {
+            'fillColor': '#FFFFFF', # สีขาวจางๆ ข้างใน
+            'color': '#3B82F6',    # เส้นขอบสีฟ้า Neon
+            'weight': 3,           # ความหนาเส้นขอบ
+            'fillOpacity': 0.05    # ความโปร่งใสของสีขาวข้างใน (สว่างขึ้นนิดๆ)
+        }
+    ).add_to(m)
+
     if st.session_state.pin_start: folium.Marker(st.session_state.pin_start, icon=folium.Icon(color="green", icon="play")).add_to(m)
     if st.session_state.pin_end: folium.Marker(st.session_state.pin_end, icon=folium.Icon(color="red", icon="flag")).add_to(m)
     
     if st.session_state.calculated and st.session_state.route_coords:
-        folium.PolyLine(st.session_state.route_coords, color="#3B82F6", weight=6, opacity=0.8).add_to(m) # เส้นทางสีน้ำเงินสว่าง
+        folium.PolyLine(st.session_state.route_coords, color="#3B82F6", weight=6, opacity=0.8).add_to(m)
         m.fit_bounds([st.session_state.start_coords, st.session_state.end_coords])
     
     map_data = st_folium(m, width="100%", height=550, key="map")
@@ -227,18 +219,12 @@ with col2:
             st.session_state.pin_end, st.session_state.dest_text = pos, f"📍 {get_place_name(pos[0], pos[1])}"
         reset_calculated_data(); st.rerun()
 
-    # --- ส่วนที่ 5: สรุปผลสรุป (Cards Style) ---
+    # --- ส่วนสรุปผลการเดินทาง ---
     if st.session_state.calculated and st.session_state.distance:
         st.markdown("### 📊 สรุปผลการเดินทาง")
         f_type, km_l = str(car_info["ประเภทน้ำมัน"]).strip(), float(car_info["อัตราสิ้นเปลือง (กม./ลิตร)"])
         price = df_prices.loc[FUEL_MAP.get(f_type), sel_station] if FUEL_MAP.get(f_type) in df_prices.index else 0
-        
         r1, r2, r3 = st.columns(3)
-        with r1:
-            st.markdown(f'<div class="metric-card"><div class="card-label">📏 ระยะทาง</div><div class="card-value">{st.session_state.distance:.2f} กม.</div></div>', unsafe_allow_html=True)
-        with r2:
-            st.markdown(f'<div class="metric-card"><div class="card-label">💰 ค่าน้ำมัน</div><div class="card-value">{(st.session_state.distance/km_l)*price:.2f} บาท</div></div>', unsafe_allow_html=True)
-        with r3:
-            st.markdown(f'<div class="metric-card"><div class="card-label">⛽ ราคา/ลิตร</div><div class="card-value">{price} บาท</div></div>', unsafe_allow_html=True)
-        
-        st.markdown(f'<p style="color:#A0AEC0; margin-top:15px;">ℹ️ คำนวณจาก {sel_model} ({km_l} กม./ลิตร) ราคา {f_type} ปั๊ม {sel_station}</p>', unsafe_allow_html=True)
+        with r1: st.markdown(f'<div class="metric-card"><div class="card-label">📏 ระยะทาง</div><div class="card-value">{st.session_state.distance:.2f} กม.</div></div>', unsafe_allow_html=True)
+        with r2: st.markdown(f'<div class="metric-card"><div class="card-label">💰 ค่าน้ำมัน</div><div class="card-value">{(st.session_state.distance/km_l)*price:.2f} บาท</div></div>', unsafe_allow_html=True)
+        with r3: st.markdown(f'<div class="metric-card"><div class="card-label">⛽ ราคา/ลิตร</div><div class="card-value">{price} บาท</div></div>', unsafe_allow_html=True)
