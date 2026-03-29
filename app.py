@@ -1,8 +1,8 @@
 import streamlit as st
 import gspread
+import json  # <- เพิ่มไลบรารี json สำหรับอ่านกุญแจลับ
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
-import time
 import requests
 import folium
 from streamlit_folium import st_folium
@@ -29,7 +29,6 @@ if 'map_mode_active' not in st.session_state:
 if 'active_pin_to_set' not in st.session_state:
     st.session_state.active_pin_to_set = None
 
-# ✨ แก้ปัญหา Error: สร้างตัวแปรใหม่สำหรับคุมข้อความ โดยไม่ผูกติดกับ Key ของ Widget ตรงๆ
 if 'origin_text' not in st.session_state:
     st.session_state.origin_text = ""
 if 'dest_text' not in st.session_state:
@@ -43,12 +42,16 @@ def reset_calculated_data():
     st.session_state.end_coords = None
 
 # ==========================================
-# 📦 2. เชื่อมต่อ Google Sheets และ API น้ำมัน
+# 📦 2. เชื่อมต่อ Google Sheets (เวอร์ชันใช้ Secrets) และ API
 # ==========================================
 @st.cache_resource
 def init_connection():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    
+    # 🔥 จุดที่แก้ไข: ดึงข้อมูลจากตู้นิรภัย (Secrets) ของ Streamlit
+    creds_dict = json.loads(st.secrets["google_credentials"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    
     client = gspread.authorize(creds)
     return client.open("Route Cost") 
 
@@ -101,7 +104,7 @@ def get_coords_from_text(place_name):
     if not place_name.strip() or place_name.startswith("📍"):
         return None, None
     url = f"https://nominatim.openstreetmap.org/search?q={place_name}&format=json&limit=1"
-    headers = {'User-Agent': 'RouteCostApp/1.2'}
+    headers = {'User-Agent': 'RouteCostApp/1.3'}
     try:
         res = requests.get(url, headers=headers).json()
         if len(res) > 0:
@@ -112,7 +115,7 @@ def get_coords_from_text(place_name):
 
 def get_place_name(lat, lon):
     url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-    headers = {'User-Agent': 'RouteCostApp/1.2'}
+    headers = {'User-Agent': 'RouteCostApp/1.3'}
     try:
         res = requests.get(url, headers=headers).json()
         if "display_name" in res:
@@ -149,11 +152,9 @@ col1, col2 = st.columns([1, 1.5])
 with col1:
     st.subheader("รายละเอียดการเดินทาง")
     
-    # 🔥 แก้ไข: ใช้ parameter `value` แทน `key` เพื่อปลดล็อก Error
     origin = st.text_input("จุดเริ่มต้น", value=st.session_state.origin_text)
     destination = st.text_input("จุดหมายปลายทาง", value=st.session_state.dest_text)
     
-    # ตรวจจับว่าผู้ใช้พิมพ์ข้อความเองหรือไม่
     if origin != st.session_state.origin_text:
         st.session_state.origin_text = origin
         reset_calculated_data()
@@ -262,9 +263,6 @@ with col2:
         
     map_data = st_folium(m, width="100%", height=500, returned_objects=["last_clicked"], key="interactive_map")
     
-    # ==========================================
-    # 🖱️ 5. ดักจับคลิกแผนที่ (อัปเดตตัวแปรใหม่ ป้องกัน Error)
-    # ==========================================
     if st.session_state.map_mode_active and map_data and map_data.get("last_clicked"):
         lat = map_data["last_clicked"]["lat"]
         lon = map_data["last_clicked"]["lng"]
@@ -272,20 +270,14 @@ with col2:
         
         if st.session_state.active_pin_to_set == "🟢 จุดเริ่มต้น (Start)" and st.session_state.pin_start != clicked_coord:
             st.session_state.pin_start = clicked_coord
-            
-            # 🔥 อัปเดตผ่านตัวแปรใหม่ `origin_text` 
             place_name = get_place_name(lat, lon)
             st.session_state.origin_text = f"📍 {place_name}"
-            
             reset_calculated_data()
             st.rerun() 
             
         elif st.session_state.active_pin_to_set == "🔴 ปลายทาง (End)" and st.session_state.pin_end != clicked_coord:
             st.session_state.pin_end = clicked_coord
-            
-            # 🔥 อัปเดตผ่านตัวแปรใหม่ `dest_text`
             place_name = get_place_name(lat, lon)
             st.session_state.dest_text = f"📍 {place_name}"
-            
             reset_calculated_data()
             st.rerun()
