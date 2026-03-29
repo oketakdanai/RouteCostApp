@@ -1,6 +1,6 @@
 import streamlit as st
 import gspread
-import json  # <- เพิ่มไลบรารี json สำหรับอ่านกุญแจลับ
+import json  
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import requests
@@ -42,16 +42,19 @@ def reset_calculated_data():
     st.session_state.end_coords = None
 
 # ==========================================
-# 📦 2. เชื่อมต่อ Google Sheets (เวอร์ชันใช้ Secrets) และ API
+# 📦 2. เชื่อมต่อ Google Sheets (เวอร์ชันใช้ Secrets ป้องกัน Error)
 # ==========================================
 @st.cache_resource
 def init_connection():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # 🔥 จุดที่แก้ไข: ดึงข้อมูลจากตู้นิรภัย (Secrets) ของ Streamlit
+    # ดึงข้อมูลจากตู้นิรภัย (Secrets) ของ Streamlit
     creds_dict = json.loads(st.secrets["google_credentials"])
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     
+    # 🔥 จุดแก้ปัญหาบอสใหญ่: บังคับแปลงตัวอักษร \n ให้เป็นการ "ขึ้นบรรทัดใหม่" จริงๆ
+    creds_dict["private_key"] = creds_dict["private_key"].replace('\\n', '\n')
+    
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     return client.open("Route Cost") 
 
@@ -63,6 +66,9 @@ def get_car_data():
 
 df_cars = get_car_data()
 
+# ==========================================
+# ⛽ 3. ดึงราคาน้ำมันจาก API
+# ==========================================
 @st.cache_data(ttl=3600) 
 def get_live_oil_prices():
     url = "https://thai-oil-api.vercel.app/latest"
@@ -98,13 +104,13 @@ FUEL_MAPPING = {
 }
 
 # ==========================================
-# 🗺️ 3. ระบบแผนที่และการคำนวณเส้นทาง
+# 🗺️ 4. ระบบแผนที่และการคำนวณเส้นทาง
 # ==========================================
 def get_coords_from_text(place_name):
     if not place_name.strip() or place_name.startswith("📍"):
         return None, None
     url = f"https://nominatim.openstreetmap.org/search?q={place_name}&format=json&limit=1"
-    headers = {'User-Agent': 'RouteCostApp/1.3'}
+    headers = {'User-Agent': 'RouteCostApp/1.4'}
     try:
         res = requests.get(url, headers=headers).json()
         if len(res) > 0:
@@ -115,7 +121,7 @@ def get_coords_from_text(place_name):
 
 def get_place_name(lat, lon):
     url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-    headers = {'User-Agent': 'RouteCostApp/1.3'}
+    headers = {'User-Agent': 'RouteCostApp/1.4'}
     try:
         res = requests.get(url, headers=headers).json()
         if "display_name" in res:
@@ -143,7 +149,7 @@ def get_route_data_free(start_coords, end_coords):
     return None, None, None, None
 
 # ==========================================
-# 🎨 4. จัดหน้า UI
+# 🎨 5. จัดหน้า UI
 # ==========================================
 st.title("📍 Route Cost Calculator")
 
