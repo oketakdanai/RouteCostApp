@@ -1,0 +1,7 @@
+streamlit
+gspread
+oauth2client
+pandas
+requests
+folium
+streamlit-folium
