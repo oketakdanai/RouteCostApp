@@ -48,20 +48,39 @@ def reset_calculated_data():
 @st.cache_resource
 def init_connection():
     try:
-        # 1. โหลดข้อมูลกุญแจ
+        # 1. โหลดข้อมูลกุญแจจาก Secrets
         creds_json = st.secrets["google_credentials"]
         creds_dict = json.loads(creds_json, strict=False)
         
-        # 2. จัดการเรื่องตัวตัดบรรทัดให้ชัวร์ที่สุด
-        if "private_key" in creds_dict:
-            # ลบช่องว่างที่อาจติดมาจากการก๊อปปี้ และแปลง \n ให้ถูกต้อง
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        # 2. ระบบซ่อมแซมลายเซ็นกุญแจ (JWT Signature Fixer)
+        private_key = creds_dict.get("private_key", "")
         
-        # 3. ล็อกอิน
+        # ล้างรอยด่างพร้อย: ลบการขึ้นบรรทัดใหม่ทิ้งให้หมดก่อน
+        cleaned_key = private_key.replace("\\n", "\n")
+        
+        # ค้นหาจุดเริ่มและจุดจบของกุญแจ แล้วตัดส่วนเกินออก
+        if "-----BEGIN PRIVATE KEY-----" in cleaned_key:
+            start_marker = "-----BEGIN PRIVATE KEY-----"
+            end_marker = "-----END PRIVATE KEY-----"
+            
+            # ดึงเฉพาะเนื้อกุญแจข้างในออกมา
+            core_key = cleaned_key.split(start_marker)[1].split(end_marker)[0]
+            # ลบช่องว่าง/การขึ้นบรรทัดใหม่ทั้งหมดในเนื้อกุญแจ
+            core_key = "".join(core_key.split())
+            
+            # ประกอบร่างใหม่ตามมาตรฐาน PEM (เป๊ะแน่นอน 100%)
+            import textwrap
+            formatted_core = "\n".join(textwrap.wrap(core_key, 64))
+            final_key = f"{start_marker}\n{formatted_core}\n{end_marker}\n"
+            
+            creds_dict["private_key"] = final_key
+        
+        # 3. ล็อกอินเข้า Google Sheets
         client = gspread.service_account_from_dict(creds_dict)
         return client.open("Route Cost")
+        
     except Exception as e:
-        st.error(f"⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ Google Sheets: {e}")
+        st.error(f"⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ: {e}")
         return None
     
     # 🔥🔥🔥 ระบบ "เครื่องซักผ้ากุญแจ" (Key Washer) 🔥🔥🔥
