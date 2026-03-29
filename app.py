@@ -6,11 +6,11 @@ from streamlit_folium import st_folium
 import json
 import os
 
-# 1. ตั้งค่าหน้าตาเบื้องต้น
+# 1. Page Configuration
 st.set_page_config(page_title="Route Cost Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 # ==========================================
-# 🎨 2. Modern UI Styling (CSS Injection)
+# 🎨 2. Modern UI Styling (Font Prompt + Cards)
 # ==========================================
 st.markdown("""
     <style>
@@ -39,7 +39,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 🧠 3. ระบบจัดการความจำ
+# 🧠 3. Session State
 # ==========================================
 if 'selected_type' not in st.session_state: st.session_state.selected_type = None
 keys = ['calculated', 'distance', 'route_coords', 'start_coords', 'end_coords', 'pin_start', 'pin_end', 'map_mode_active', 'active_pin_to_set', 'origin_text', 'dest_text']
@@ -52,7 +52,7 @@ def reset_calculated_data():
     st.session_state.route_coords = None
 
 # ==========================================
-# 📦 4. ดึงข้อมูลรถจาก CSV
+# 📦 4. Load Data (CSV)
 # ==========================================
 @st.cache_data(ttl=10)
 def load_car_database():
@@ -67,7 +67,7 @@ def load_car_database():
 df_cars = load_car_database()
 
 # ==========================================
-# ⛽ 5. ระบบราคาน้ำมัน
+# ⛽ 5. Oil Price API
 # ==========================================
 @st.cache_data(ttl=3600) 
 def get_live_oil_prices():
@@ -84,17 +84,17 @@ df_prices = get_live_oil_prices()
 FUEL_MAP = {"เบนซิน": "gasoline_95", "แก๊สโซฮอล์ 95": "gasohol_95", "แก๊สโซฮอล์ 91": "gasohol_91", "E20": "gasohol_e20", "ดีเซล": "diesel", "ดีเซล B7": "diesel"}
 
 # ==========================================
-# 🗺️ 6. ฟังก์ชัน Map & Location
+# 🗺️ 6. Helpers
 # ==========================================
 def get_place_name(lat, lon):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=th"
-        res = requests.get(url, headers={'User-Agent': 'RouteApp/11.0'}).json()
+        res = requests.get(url, headers={'User-Agent': 'RouteApp/Final'}).json()
         return ", ".join(res.get("display_name", "").split(", ")[:3])
     except: return f"{lat:.4f}, {lon:.4f}"
 
 # ==========================================
-# 🎨 7. Main Dashboard UI
+# 🎨 7. UI Layout
 # ==========================================
 st.markdown(f'<h1 style="text-align: left; margin-bottom: 30px;">🛰️ Route Cost Calculator</h1>', unsafe_allow_html=True)
 col1, col2 = st.columns([1, 1.8], gap="large")
@@ -154,22 +154,8 @@ with col1:
 
 with col2:
     st.markdown("### 🏁 แผนที่แสดงเส้นทาง")
+    # กลับมาใช้ Dark Matter แบบคลีนๆ ไม่มีเส้นขอบกวนใจ
     m = folium.Map(location=[13.75, 100.5], zoom_start=6, tiles='CartoDB dark_matter') 
-    
-    # 🔥 ระบบ Highlight ประเทศไทย (เวอร์ชันโหลดจากไฟล์ในเครื่อง ปลอดภัยกว่า 100%)
-    if os.path.exists("thailand.json"):
-        with open("thailand.json", encoding='utf-8') as f:
-            geo_data = json.load(f)
-            folium.GeoJson(
-                geo_data,
-                name="Thailand Highlight",
-                style_function=lambda x: {
-                    'fillColor': '#FFFFFF',
-                    'color': '#3B82F6',
-                    'weight': 3,
-                    'fillOpacity': 0.05
-                }
-            ).add_to(m)
     
     if st.session_state.pin_start: folium.Marker(st.session_state.pin_start, icon=folium.Icon(color="green", icon="play")).add_to(m)
     if st.session_state.pin_end: folium.Marker(st.session_state.pin_end, icon=folium.Icon(color="red", icon="flag")).add_to(m)
